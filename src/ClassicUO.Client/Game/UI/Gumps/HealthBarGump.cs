@@ -406,6 +406,7 @@ namespace ClassicUO.Game.UI.Gumps
 
             bool inparty = World.Party.Contains(LocalSerial);
 
+
             ushort textColor = 0x0386;
 
             Entity entity = World.Get(LocalSerial);
@@ -440,7 +441,7 @@ namespace ClassicUO.Game.UI.Gumps
 
                     if (World.TargetManager.LastAttack != LocalSerial)
                     {
-                        GameActions.SendCloseStatus(World, LocalSerial);
+                        GameActions.SendCloseStatus(World,LocalSerial);
                     }
 
                     if (inparty)
