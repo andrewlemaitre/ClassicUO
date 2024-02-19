@@ -443,7 +443,7 @@ namespace ClassicUO.Game.UI.Gumps
                     {
                         GameActions.SendCloseStatus(World,LocalSerial);
                     }
-
+                    
                     if (inparty)
                     {
                         if (_textBox != null && _textBox.Hue != textColor)
