@@ -32,16 +32,20 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Xml;
 using ClassicUO.Game.UI.Controls;
 using ClassicUO.Game.UI.Gumps;
+using ClassicUO.Utility.Logging;
 using Microsoft.Xna.Framework;
 
 namespace ClassicUO.Game.Managers
 {
     internal sealed class AnchorManager
     {
+        public enum DropType { NONE, ATTACH, INSERT_UP, INSERT_RIGHT, INSERT_DOWN, INSERT_LEFT };
+
         private static readonly Vector2[][] _anchorTriangles =
         {
             new[] { new Vector2(0f, 0f), new Vector2(0.5f, 0.5f), new Vector2(0f, 1f) },
@@ -110,7 +114,7 @@ namespace ClassicUO.Game.Managers
             }
         }*/
 
-        public void DropControl(AnchorableGump draggedControl, AnchorableGump host)
+        public void DropControl(AnchorableGump draggedControl, AnchorableGump host, DropType dropType)
         {
             if (host.AnchorType == draggedControl.AnchorType && this[draggedControl] == null)
             {
@@ -129,11 +133,18 @@ namespace ClassicUO.Game.Managers
 
                         this[draggedControl] = this[host];
                     }
+                    else
+                    {
+                        Utility.Logging.Log.Trace("Drop direction not empty.");
+                        this[host].InsertControlAt(draggedControl, host, relativePosition.Value,dropType);
+
+                        this[draggedControl] = this[host];
+                    }
                 }
             }
         }
 
-        public Point GetCandidateDropLocation(AnchorableGump draggedControl, AnchorableGump host)
+        public (Point, DropType) GetCandidateDropLocation(AnchorableGump draggedControl, AnchorableGump host)
         {
             if (host.AnchorType == draggedControl.AnchorType && this[draggedControl] == null)
             {
@@ -141,16 +152,54 @@ namespace ClassicUO.Game.Managers
 
                 if (relativePosition.HasValue)
                 {
-                    if (this[host] == null || this[host].IsEmptyDirection(draggedControl, host, relativePosition.Value))
+                    if (this[host] == null)
                     {
+                        //Log.Trace("Drop candidate location host is null.");//Todo:Remove
                         Point offset = relativePosition.Value * new Point(g.GroupMatrixWidth, g.GroupMatrixHeight);
 
-                        return new Point(host.X + offset.X, host.Y + offset.Y);
+                        return (new Point(host.X + offset.X, host.Y + offset.Y), DropType.ATTACH);
+                    }
+                    else if (this[host].IsEmptyDirection(draggedControl, host, relativePosition.Value))
+                    {
+                        //Log.Trace("Drop candidate location is empty.");//Todo:Remove
+                        Point offset = relativePosition.Value * new Point(g.GroupMatrixWidth, g.GroupMatrixHeight);
+
+                        return (new Point(host.X + offset.X, host.Y + offset.Y), DropType.ATTACH);
+                    }
+                    else if (!this[host].IsEmptyDirection(draggedControl, host, relativePosition.Value))
+                    {
+                        //Point offset = new Point(0, 0);
+                        DropType dropType = DropType.NONE;
+
+                        if (relativePosition.Value.Y == -1)
+                        {
+                            //offset = new Point(0, 0);
+                            dropType = DropType.INSERT_UP;
+                        }
+                        else if (relativePosition.Value.Y == 1)
+                        {
+                            //offset = new Point(0, g.GroupMatrixHeight);
+                            dropType = DropType.INSERT_DOWN;
+                        }
+                        else if(relativePosition.Value.X == -1)
+                        {
+                            //offset = new Point(0, 0);
+                            dropType = DropType.INSERT_LEFT;
+                        }
+                        else if (relativePosition.Value.X == 1)
+                        {
+                            //offset = new Point(g.GroupMatrixWidth, 0);
+                            dropType = DropType.INSERT_RIGHT;
+                        }
+                        Point offset = relativePosition.Value * new Point(g.GroupMatrixWidth, g.GroupMatrixHeight);
+                        //Log.Trace(string.Format("DCL is not empty. Relative Position={0}. Offset={1}. Host={2},{3}", relativePosition, offset, host.X, host.Y));//Todo:Remove
+                        return (new Point(host.X + offset.X, host.Y + offset.Y), dropType);
                     }
                 }
             }
 
-            return draggedControl.Location;
+            //Log.Trace("Returning dragged location.");//Todo:Remove
+            return (draggedControl.Location,DropType.NONE);
         }
 
         public AnchorableGump GetAnchorableControlUnder(AnchorableGump draggedControl)
@@ -403,6 +452,173 @@ namespace ClassicUO.Game.Managers
                 }
             }
 
+            public void InsertControlAt(AnchorableGump control, AnchorableGump host, Point relativePosition, DropType dropType)
+            {
+                if (dropType != DropType.INSERT_UP && dropType != DropType.INSERT_DOWN && dropType != DropType.INSERT_RIGHT && dropType != DropType.INSERT_LEFT)
+                {
+                    return;
+                }
+
+                Point? hostPosition = GetControlCoordinates(host);
+                Log.Trace("Host coords" + hostPosition.ToString());
+
+                if (hostPosition.HasValue)
+                {
+                    int targetX = hostPosition.Value.X + relativePosition.X;
+                    int targetY = hostPosition.Value.Y + relativePosition.Y;
+
+                    if (targetX < 0) // Create new column left
+                    {
+                        ResizeMatrix(controlMatrix.GetLength(0) + control.WidthMultiplier, controlMatrix.GetLength(1), control.WidthMultiplier, 0);
+                    }
+                    else if (targetX > controlMatrix.GetLength(0) - control.WidthMultiplier) // Create new column right
+                    {
+                        ResizeMatrix(controlMatrix.GetLength(0) + control.WidthMultiplier, controlMatrix.GetLength(1), 0, 0);
+                    }
+
+                    if (targetY < 0) //Create new row top
+                    {
+                        ResizeMatrix(controlMatrix.GetLength(0), controlMatrix.GetLength(1) + control.HeightMultiplier, 0, control.HeightMultiplier);
+                    }
+                    else if (targetY > controlMatrix.GetLength(1) - 1) // Create new row bottom
+                    {
+                        ResizeMatrix(controlMatrix.GetLength(0), controlMatrix.GetLength(1) + control.HeightMultiplier, 0, 0);
+                    }
+
+                    Queue<AnchorableGump> gumpStack= new();
+
+                    if (dropType == DropType.INSERT_UP)
+                    {
+                        int currentY = targetY;
+
+                        while (currentY >= 0 && controlMatrix[targetX, currentY] != null)
+                        {
+                            gumpStack.Enqueue(controlMatrix[targetX, currentY]);
+                            currentY -= 1;
+                        }
+
+                        //controlMatrix[targetX, targetY] = control;
+                        Point currentTarget = new(targetX, targetY);
+                        controlMatrix[currentTarget.X, currentTarget.Y] = control;
+                        currentTarget.Y -= 1;
+
+                        while (gumpStack.Count > 0)
+                        {
+                            if (currentTarget.Y < 0) // Create new column right
+                            {
+                                ResizeMatrix(controlMatrix.GetLength(0), controlMatrix.GetLength(1) + control.HeightMultiplier, 0, control.HeightMultiplier);
+                            }
+                            AnchorableGump poppedGump = gumpStack.Dequeue();
+                            if (currentTarget.Y < 0)
+                            {
+                                controlMatrix[currentTarget.X, 0] = poppedGump;
+                            }
+                            else
+                            {
+                                controlMatrix[currentTarget.X, currentTarget.Y] = poppedGump;
+                            }
+                            poppedGump.Y -= poppedGump.Height;
+                            currentTarget.Y -= 1;
+                        }
+
+                    }
+                    else if (dropType == DropType.INSERT_RIGHT)
+                    {
+                        int arrayWidth = controlMatrix.GetLength(0);
+                        int currentX = targetX;
+
+                        while (currentX < arrayWidth && controlMatrix[currentX, targetY] != null)
+                        {
+                            gumpStack.Enqueue(controlMatrix[currentX, targetY]);
+                            Log.Trace("StackSerial:" + gumpStack.Last().LocalSerial.ToString());
+                            currentX += 1;
+                        }
+
+                        //controlMatrix[targetX, targetY] = control;
+                        Point currentTarget = new(targetX, targetY);
+                        controlMatrix[currentTarget.X, currentTarget.Y] = control;
+                        Log.Trace("Attaching " + control.LocalSerial.ToString() + " to " + host.LocalSerial.ToString());
+                        currentTarget.X += 1;
+
+                        while (gumpStack.Count > 0)
+                        {
+                            if (currentTarget.X > controlMatrix.GetLength(0) - control.WidthMultiplier) // Create new column right
+                            {
+                                ResizeMatrix(controlMatrix.GetLength(0) + control.WidthMultiplier, controlMatrix.GetLength(1), 0, 0);
+                            }
+                            AnchorableGump poppedGump = gumpStack.Dequeue();
+                            controlMatrix[currentTarget.X, currentTarget.Y] = poppedGump;
+                            poppedGump.X += poppedGump.Width;
+                            currentTarget.X += 1;
+                        }
+                    } else if (dropType == DropType.INSERT_DOWN)
+                    {
+                        int arrayHeight = controlMatrix.GetLength(1);
+                        int currentY = targetY;
+
+                        while (currentY < arrayHeight && controlMatrix[targetX, currentY] != null)
+                        {
+                            gumpStack.Enqueue(controlMatrix[targetX, currentY]);
+                            currentY += 1;
+                        }
+
+                        //controlMatrix[targetX, targetY] = control;
+                        Point currentTarget = new(targetX, targetY);
+                        controlMatrix[currentTarget.X, currentTarget.Y] = control;
+                        currentTarget.Y += 1;
+
+                        while (gumpStack.Count > 0)
+                        {
+                            if (currentTarget.Y > controlMatrix.GetLength(1) - 1) // Create new row bottom
+                            {
+                                ResizeMatrix(controlMatrix.GetLength(0), controlMatrix.GetLength(1) + control.HeightMultiplier, 0, 0);
+                            }
+                            AnchorableGump poppedGump = gumpStack.Dequeue();
+                            controlMatrix[currentTarget.X, currentTarget.Y] = poppedGump;
+                            poppedGump.Y += poppedGump.Height;
+                            currentTarget.Y += 1;
+                        }
+                    }
+                    else if (dropType == DropType.INSERT_LEFT)
+                    {
+                        int currentX = targetX;
+
+                        while (currentX >= 0 && controlMatrix[currentX, targetY] != null)
+                        {
+                            gumpStack.Enqueue(controlMatrix[currentX, targetY]);
+                            Log.Trace("StackSerial:" + gumpStack.Last().LocalSerial.ToString());
+                            currentX -= 1;
+                        }
+
+                        //controlMatrix[targetX, targetY] = control;
+                        Point currentTarget = new(targetX, targetY);
+                        controlMatrix[currentTarget.X, currentTarget.Y] = control;
+                        currentTarget.X -= 1;
+
+                        while (gumpStack.Count > 0)
+                        {
+                            Log.Trace("Left insert gump stack > 0");
+                            if (currentTarget.X < 0) // Create new column left
+                            {
+                                ResizeMatrix(controlMatrix.GetLength(0) + control.WidthMultiplier, controlMatrix.GetLength(1), control.WidthMultiplier, 0);
+                            }
+                            AnchorableGump poppedGump = gumpStack.Dequeue();
+                            if (currentTarget.X < 0)
+                            {
+                                controlMatrix[0, currentTarget.Y] = poppedGump;
+                            }
+                            else
+                            {
+                                controlMatrix[currentTarget.X, currentTarget.Y] = poppedGump;
+                            }
+                            poppedGump.X -= poppedGump.Width;
+                            currentTarget.X -= 1;
+                        }
+
+                    }
+                }
+            }
+
             public void AnchorControlAt(AnchorableGump control, AnchorableGump host, Point relativePosition)
             {
                 Point? hostPosition = GetControlCoordinates(host);
@@ -484,6 +700,11 @@ namespace ClassicUO.Game.Managers
                 return controlMatrix[x, y] == null;
             }
 
+            public Point? TempGetControlCoordinates(AnchorableGump control)
+            {
+                return GetControlCoordinates(control);
+            }
+
             private Point? GetControlCoordinates(AnchorableGump control)
             {
                 for (int x = 0; x < controlMatrix.GetLength(0); x++)
@@ -517,9 +738,9 @@ namespace ClassicUO.Game.Managers
 
             private void printMatrix()
             {
-                Console.WriteLine();
-                Console.WriteLine();
-                Console.WriteLine();
+                //Console.WriteLine();
+                //Console.WriteLine();
+                //Console.WriteLine();
 
                 for (int y = 0; y < controlMatrix.GetLength(1); y++)
                 {
@@ -527,7 +748,7 @@ namespace ClassicUO.Game.Managers
                     {
                         if (controlMatrix[x, y] != null)
                         {
-                            Console.Write(" " + controlMatrix[x, y].LocalSerial + " ");
+                            Console.Write(" " + string.Format("{0:0000000000}",controlMatrix[x, y].LocalSerial) + " ");
                         }
                         else
                         {
