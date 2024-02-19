@@ -123,7 +123,6 @@ namespace ClassicUO.Game.Scenes
             }
 
             Client.Game.SetWindowSize(640, 480);
-
         }
 
 
