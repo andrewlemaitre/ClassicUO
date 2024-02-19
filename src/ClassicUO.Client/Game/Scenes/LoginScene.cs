@@ -52,7 +52,6 @@ using ClassicUO.Resources;
 using ClassicUO.Utility;
 using ClassicUO.Utility.Logging;
 using Microsoft.Xna.Framework;
-using System.Linq;
 
 namespace ClassicUO.Game.Scenes
 {
@@ -104,9 +103,9 @@ namespace ClassicUO.Game.Scenes
             _autoLogin = Settings.GlobalSettings.AutoLogin;
 
             UIManager.Add(new LoginBackground(_world));
-            //UIManager.Add(_currentGump = new LoginGump(_world, this));
+            UIManager.Add(_currentGump = new LoginGump(_world, this));
 
-            //Client.Game.Audio.PlayMusic(Client.Game.Audio.LoginMusicIndex, false, true);
+            Client.Game.Audio.PlayMusic(Client.Game.Audio.LoginMusicIndex, false, true);
 
             if (CanAutologin && CurrentLoginStep != LoginSteps.Main || CUOEnviroment.SkipLoginScreen)
             {
@@ -125,16 +124,6 @@ namespace ClassicUO.Game.Scenes
 
             Client.Game.SetWindowSize(640, 480);
 
-            String[] names = { "Zero", "One", "Two", "Three", "Four", "Five" };
-            BaseHealthBarGump hbgc;
-            for ( int i = 1; i <= 5; i++ )
-            {
-                hbgc = new HealthBarGumpCustom(null, (uint)(11111111 * i), names[i]);    
-                hbgc.X = i*100;
-                hbgc.Y = 0;
-                UIManager.Add(hbgc);
-                hbgc.SetInScreen();
-            }
         }
 
 

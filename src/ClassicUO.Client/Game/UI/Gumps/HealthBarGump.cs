@@ -47,8 +47,6 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using SDL2;
 using ClassicUO.Game.Scenes;
-using ClassicUO.Utility.Logging;
-using System.Diagnostics;
 
 namespace ClassicUO.Game.UI.Gumps
 {
@@ -58,41 +56,23 @@ namespace ClassicUO.Game.UI.Gumps
 
         protected BaseHealthBarGump(World world, Entity entity) : this(world, 0, 0)
         {
-            //if (entity == null || entity.IsDestroyed)
-            //{
-            //    Dispose();
+            if (entity == null || entity.IsDestroyed)
+            {
+                Dispose();
 
-            //    return;
-            //}
+                return;
+            }
 
-            //GameActions.RequestMobileStatus(world, entity.Serial, true);
-            LocalSerial = 0;
+            GameActions.RequestMobileStatus(world, entity.Serial, true);
+            LocalSerial = entity.Serial;
             CanCloseWithRightClick = true;
-            _name = "test name"; //entity.Name;
-            _isDead = false; //entity is Mobile mm && mm.IsDead;
+            _name = entity.Name;
+            _isDead = entity is Mobile mm && mm.IsDead;
 
             BuildGump();
         }
 
-        protected BaseHealthBarGump(World world, uint serial, String name) : this(world, 0, 0)
-        {
-            //if (entity == null || entity.IsDestroyed)
-            //{
-            //    Dispose();
-
-            //    return;
-            //}
-
-            //GameActions.RequestMobileStatus(world, entity.Serial, true);
-            LocalSerial = serial;
-            CanCloseWithRightClick = true;
-            _name = name; //entity.Name;
-            _isDead = false; //entity is Mobile mm && mm.IsDead;
-
-            BuildGump();
-        }
-
-        protected BaseHealthBarGump(World world, uint serial) : this(world, null)
+        protected BaseHealthBarGump(World world, uint serial) : this(world, world.Get(serial))
         {
         }
 
@@ -170,7 +150,6 @@ namespace ClassicUO.Game.UI.Gumps
 
         protected void TextBoxOnMouseUp(object sender, MouseEventArgs e)
         {
-            return;
             if (e.Button != MouseButtonType.Left)
             {
                 return;
@@ -224,6 +203,13 @@ namespace ClassicUO.Game.UI.Gumps
 
         protected override void OnDragEnd(int x, int y)
         {
+            // when dragging an healthbar with target on, we have to reset the dclick timer 
+            if (World.TargetManager.IsTargeting)
+            {
+                Mouse.LastLeftButtonClickTime = 0;
+                Mouse.CancelDoubleClick = true;
+            }
+
             base.OnDragEnd(x, y);
         }
 
@@ -234,29 +220,28 @@ namespace ClassicUO.Game.UI.Gumps
                 return;
             }
 
-            //if (World.TargetManager.IsTargeting)
-            //{
-            //    _targetBroke = true;
-            //    World.TargetManager.Target(LocalSerial);
-            //    Mouse.LastLeftButtonClickTime = 0;
-            //}
-            //else if (_canChangeName)
-            //{
-            //    if (_textBox != null)
-            //    {
-            //        _textBox.IsEditable = false;
-            //    }
+            if (World.TargetManager.IsTargeting)
+            {
+                _targetBroke = true;
+                World.TargetManager.Target(LocalSerial);
+                Mouse.LastLeftButtonClickTime = 0;
+            }
+            else if (_canChangeName)
+            {
+                if (_textBox != null)
+                {
+                    _textBox.IsEditable = false;
+                }
 
-            //    UIManager.KeyboardFocusControl = null;
-            //    UIManager.SystemChat?.SetFocus();
-            //}
+                UIManager.KeyboardFocusControl = null;
+                UIManager.SystemChat?.SetFocus();
+            }
 
             base.OnMouseDown(x, y, button);
         }
 
         protected override bool OnMouseDoubleClick(int x, int y, MouseButtonType button)
         {
-            return false;
             if (button != MouseButtonType.Left)
             {
                 return false;
@@ -300,7 +285,7 @@ namespace ClassicUO.Game.UI.Gumps
 
         protected override void OnKeyDown(SDL.SDL_Keycode key, SDL.SDL_Keymod mod)
         {
-            Entity entity = null;// World.Get(LocalSerial);
+            Entity entity = World.Get(LocalSerial);
 
             if (entity == null || SerialHelper.IsItem(entity.Serial))
             {
@@ -318,13 +303,13 @@ namespace ClassicUO.Game.UI.Gumps
 
         protected override void OnMouseOver(int x, int y)
         {
-            //Entity entity = World.Get(LocalSerial);
+            Entity entity = World.Get(LocalSerial);
 
-            //if (entity != null)
-            //{
-            //    SelectedObject.HealthbarObject = entity;
-            //    SelectedObject.Object = entity;
-            //}
+            if (entity != null)
+            {
+                SelectedObject.HealthbarObject = entity;
+                SelectedObject.Object = entity;
+            }
 
             base.OnMouseOver(x, y);
         }
@@ -379,9 +364,6 @@ namespace ClassicUO.Game.UI.Gumps
         public HealthBarGumpCustom(World world, Entity entity) : base(world, entity)
         {
         }
-        public HealthBarGumpCustom(World world, uint serial, String name) : base(world, serial, name)
-        {
-        }
 
         public HealthBarGumpCustom(World world, uint serial) : base(world, serial)
         {
@@ -422,177 +404,828 @@ namespace ClassicUO.Game.UI.Gumps
                 return;
             }
 
+            bool inparty = World.Party.Contains(LocalSerial);
+
+            ushort textColor = 0x0386;
+
+            Entity entity = World.Get(LocalSerial);
+
+            if (entity is Item it && it.Layer == 0 && it.Container == World.Player)
+            {
+                entity = null;
+            }
+
+            if (entity == null || entity.IsDestroyed)
+            {
+                if (LocalSerial != World.Player && (ProfileManager.CurrentProfile.CloseHealthBarType == 1 || ProfileManager.CurrentProfile.CloseHealthBarType == 2 && World.CorpseManager.Exists(0, LocalSerial | 0x8000_0000)))
+                {
+                    //### KEEPS PARTY BAR ACTIVE WHEN PARTY MEMBER DIES & MOBILEBAR CLOSE SELECTED ###//
+                    if (!inparty && CheckIfAnchoredElseDispose())
+                    {
+                        return;
+                    }
+
+                    //### KEEPS PARTY BAR ACTIVE WHEN PARTY MEMBER DIES & MOBILEBAR CLOSE SELECTED ###//
+                }
+
+                if (_isDead)
+                {
+                    _isDead = false;
+                }
+
+                if (!_outOfRange)
+                {
+                    _outOfRange = true;
+                    textColor = 912;
+
+                    if (World.TargetManager.LastAttack != LocalSerial)
+                    {
+                        GameActions.SendCloseStatus(World, LocalSerial);
+                    }
+
+                    if (inparty)
+                    {
+                        if (_textBox != null && _textBox.Hue != textColor)
+                        {
+                            _textBox.Hue = textColor;
+                        }
+
+                        if (_bars.Length >= 2 && _bars[1] != null)
+                        {
+                            _bars[1].IsVisible = false;
+
+                            _bars[2].IsVisible = false;
+                        }
+                    }
+                    else
+                    {
+                        if (_textBox != null)
+                        {
+                            if (_textBox.Hue != textColor)
+                            {
+                                _textBox.Hue = textColor;
+                            }
+
+                            _textBox.IsEditable = false;
+                        }
+                    }
+
+                    if (_background.Hue != 912)
+                    {
+                        _background.Hue = 912;
+                    }
+
+                    if (_hpLineRed.LineColor != HPB_COLOR_GRAY)
+                    {
+                        _hpLineRed.LineColor = HPB_COLOR_GRAY;
+
+                        _border[0].LineColor = _border[1].LineColor = _border[2].LineColor = _border[3].LineColor = HPB_COLOR_BLACK;
+
+                        if (_manaLineRed != null && _stamLineRed != null)
+                        {
+                            _manaLineRed.LineColor = _stamLineRed.LineColor = HPB_COLOR_GRAY;
+                        }
+                    }
+
+                    _bars[0].IsVisible = false;
+                }
+            }
+
+            if (entity != null && !entity.IsDestroyed)
+            {
+                _hpLineRed.IsVisible = entity.HitsMax > 0;
+
+                Mobile mobile = entity as Mobile;
+
+                if (!_isDead && entity != World.Player && mobile != null && mobile.IsDead && ProfileManager.CurrentProfile.CloseHealthBarType == 2) // is dead
+                {
+                    if (!inparty && CheckIfAnchoredElseDispose())
+                    {
+                        return;
+                    }
+                }
+
+                if (entity is Mobile mm && _canChangeName != mm.IsRenamable)
+                {
+                    _canChangeName = mm.IsRenamable;
+
+                    if (_textBox != null)
+                    {
+                        _textBox.AcceptMouseInput = _canChangeName;
+                        _textBox.AcceptKeyboardInput = _canChangeName;
+
+                        if (!_canChangeName)
+                        {
+                            _textBox.IsEditable = false;
+                        }
+                    }
+                }
+
+                if (!(mobile != null && mobile.IsDead) && _isDead)
+                {
+                    _isDead = false;
+                }
+
+                if (!string.IsNullOrEmpty(entity.Name) && _name != entity.Name)
+                {
+                    _name = entity.Name;
+
+                    if (_textBox != null)
+                    {
+                        _textBox.SetText(_name);
+                    }
+                }
+
+                if (_outOfRange)
+                {
+                    if (entity.HitsMax == 0)
+                    {
+                        GameActions.RequestMobileStatus(World, entity);
+                    }
+
+                    _outOfRange = false;
+
+
+                    _canChangeName = mobile != null && mobile.IsRenamable;
+
+                    if (_canChangeName)
+                    {
+                        textColor = 0x000E;
+                    }
+
+                    if (inparty && _bars.Length >= 2 && _bars[1] != null)
+                    {
+                        _bars[1].IsVisible = true;
+
+                        _bars[2].IsVisible = true;
+                    }
+
+                    if (_hpLineRed.LineColor != HPB_COLOR_RED)
+                    {
+                        _hpLineRed.LineColor = HPB_COLOR_RED;
+
+                        _border[0].LineColor = _border[1].LineColor = _border[2].LineColor = _border[3].LineColor = HPB_COLOR_BLACK;
+
+                        if (_manaLineRed != null && _stamLineRed != null)
+                        {
+                            _manaLineRed.LineColor = _stamLineRed.LineColor = HPB_COLOR_RED;
+                        }
+                    }
+
+                    _bars[0].IsVisible = true;
+                }
+
+                if (World.TargetManager.LastTargetInfo.Serial != World.Player && !_outOfRange && mobile != null)
+                {
+                    if (mobile == World.TargetManager.LastTargetInfo.Serial)
+                    {
+                        _border[0].LineColor = HPB_COLOR_RED;
+
+                        if (_border.Length >= 3)
+                        {
+                            _border[1].LineColor = _border[2].LineColor = _border[3].LineColor = HPB_COLOR_RED;
+                        }
+                    }
+                    else if (mobile != World.TargetManager.LastTargetInfo.Serial)
+                    {
+                        _border[0].LineColor = HPB_COLOR_BLACK;
+
+                        if (_border.Length >= 3)
+                        {
+                            _border[1].LineColor = _border[2].LineColor = _border[3].LineColor = HPB_COLOR_BLACK;
+                        }
+                    }
+                }
+
+                if (mobile != null)
+                {
+                    textColor = Notoriety.GetHue(mobile.NotorietyFlag);
+                }
+
+                if (_textBox != null && _textBox.Hue != textColor)
+                {
+                    _textBox.Hue = textColor;
+                }
+
+                ushort barColor = mobile != null ? Notoriety.GetHue(mobile.NotorietyFlag) : (ushort)912;
+
+                if (_background.Hue != barColor)
+                {
+                    if (mobile != null && mobile.IsDead)
+                    {
+                        _background.Hue = 912;
+                    }
+                    else if (!ProfileManager.CurrentProfile.CBBlackBGToggled)
+                    {
+                        _background.Hue = barColor;
+                    }
+                }
+
+                if (mobile != null && mobile.IsDead || ProfileManager.CurrentProfile.CBBlackBGToggled)
+                {
+                    if (_background.Hue != 912)
+                    {
+                        _background.Hue = 912;
+                    }
+                }
+
+
+                if (mobile != null)
+                {
+                    if (mobile.IsPoisoned && !_poisoned)
+                    {
+                        _bars[0].LineColor = HPB_COLOR_POISON;
+
+                        _poisoned = true;
+                        _normalHits = false;
+                    }
+                    else if (mobile.IsYellowHits && !_yellowHits)
+                    {
+                        _bars[0].LineColor = HPB_COLOR_YELLOW;
+
+                        _yellowHits = true;
+                        _normalHits = false;
+                    }
+                    else if (!_normalHits && !mobile.IsPoisoned && !mobile.IsYellowHits && (_poisoned || _yellowHits))
+                    {
+                        _bars[0].LineColor = HPB_COLOR_BLUE;
+
+                        _poisoned = false;
+                        _yellowHits = false;
+                        _normalHits = true;
+                    }
+                }
+
+
+                int hits = CalculatePercents(entity.HitsMax, entity.Hits, HPB_BAR_WIDTH);
+
+                if (hits != _bars[0].LineWidth)
+                {
+                    _bars[0].LineWidth = hits;
+                }
+
+                if ((inparty || LocalSerial == World.Player) && mobile != null && _bars != null)
+                {
+                    int mana = CalculatePercents(mobile.ManaMax, mobile.Mana, HPB_BAR_WIDTH);
+                    int stam = CalculatePercents(mobile.StaminaMax, mobile.Stamina, HPB_BAR_WIDTH);
+
+                    if (_bars.Length >= 2 && _bars[1] != null && mana != _bars[1].LineWidth)
+                    {
+                        _bars[1].LineWidth = mana;
+                    }
+
+                    if (_bars.Length >= 2 && _bars[2] != null && stam != _bars[2].LineWidth)
+                    {
+                        _bars[2].LineWidth = stam;
+                    }
+                }
+
+                if (UIManager.MouseOverControl != null && UIManager.MouseOverControl.RootParent == this)
+                {
+                    SelectedObject.HealthbarObject = entity;
+                    SelectedObject.Object = entity;
+                }
+            }
+
+            if (LocalSerial == World.Player)
+            {
+                if (World.Player.InWarMode != _oldWarMode)
+                {
+                    _oldWarMode = !_oldWarMode;
+
+                    if (World.Player.InWarMode)
+                    {
+                        _border[0].LineColor = HPB_COLOR_RED;
+
+                        if (_border.Length >= 3)
+                        {
+                            _border[1].LineColor = _border[2].LineColor = _border[3].LineColor = HPB_COLOR_RED;
+                        }
+                    }
+                    else
+                    {
+                        _border[0].LineColor = HPB_COLOR_BLACK;
+
+                        if (_border.Length >= 3)
+                        {
+                            _border[1].LineColor = _border[2].LineColor = _border[3].LineColor = HPB_COLOR_BLACK;
+                        }
+                    }
+                }
+            }
         }
 
         protected override void BuildGump()
         {
             WantUpdateSize = false;
 
+            Entity entity = World.Get(LocalSerial);
 
-            _oldWarMode = false;
-            Height = HPB_HEIGHT_MULTILINE;
-            Width = HPB_WIDTH;
 
-            Add(_background = new AlphaBlendControl(0.7f) { Width = Width, Height = Height, AcceptMouseInput = true, CanMove = true });
+            if (World.Party.Contains(LocalSerial))
+            {
+                Height = HPB_HEIGHT_MULTILINE;
+                Width = HPB_WIDTH;
 
-            Add
-            (
-                _textBox = new StbTextBox
-                (
-                    1,
-                    32,
-                    isunicode: true,
-                    style: FontStyle.Cropped | FontStyle.BlackBorder,
-                    hue: 0x005A,
-                    maxWidth: Width,
-                    align: TEXT_ALIGN_TYPE.TS_CENTER
-                )
+                Add(_background = new AlphaBlendControl(0.7f) { Width = Width, Height = Height, AcceptMouseInput = true, CanMove = true });
+
+
+                if (LocalSerial == World.Player)
                 {
-                    X = 0,
-                    Y = 3,
-                    Width = HPB_BAR_WIDTH,
-                    IsEditable = false,
-                    CanMove = true
+                    Add
+                    (
+                        _textBox = new StbTextBox
+                        (
+                            1,
+                            32,
+                            HPB_WIDTH,
+                            true,
+                            FontStyle.Cropped | FontStyle.BlackBorder,
+                            Notoriety.GetHue(World.Player.NotorietyFlag),
+                            TEXT_ALIGN_TYPE.TS_CENTER
+                        )
+                        {
+                            X = 0,
+                            Y = 3,
+                            Width = HPB_BAR_WIDTH,
+                            IsEditable = false,
+                            CanMove = true
+                        }
+                    );
                 }
-            );
+                else
+                {
+                    Add
+                    (
+                        _textBox = new StbTextBox
+                        (
+                            1,
+                            32,
+                            HPB_WIDTH,
+                            true,
+                            FontStyle.Cropped | FontStyle.BlackBorder,
+                            Notoriety.GetHue((entity as Mobile)?.NotorietyFlag ?? NotorietyFlag.Gray),
+                            TEXT_ALIGN_TYPE.TS_CENTER
+                        )
+                        {
+                            X = 0,
+                            Y = 3,
+                            Width = HPB_BAR_WIDTH,
+                            IsEditable = false,
+                            CanMove = true
+                        }
+                    );
+                }
 
-            Add
-            (
-                _outline = new LineCHB
+                Add
                 (
-                    HPB_BAR_SPACELEFT - HPB_OUTLINESIZE,
-                    27 - HPB_OUTLINESIZE,
-                    HPB_BAR_WIDTH + HPB_OUTLINESIZE * 2,
-                    HPB_BAR_HEIGHT * 3 + 2 + HPB_OUTLINESIZE * 2,
-                    HPB_COLOR_DRAW_BLACK.PackedValue
-                )
-            );
+                    _outline = new LineCHB
+                    (
+                        HPB_BAR_SPACELEFT - HPB_OUTLINESIZE,
+                        27 - HPB_OUTLINESIZE,
+                        HPB_BAR_WIDTH + HPB_OUTLINESIZE * 2,
+                        HPB_BAR_HEIGHT * 3 + 2 + HPB_OUTLINESIZE * 2,
+                        HPB_COLOR_DRAW_BLACK.PackedValue
+                    )
+                );
 
-            Add
-            (
-                _hpLineRed = new LineCHB
+                Add
                 (
-                    HPB_BAR_SPACELEFT,
-                    27,
-                    HPB_BAR_WIDTH,
-                    HPB_BAR_HEIGHT,
-                    HPB_COLOR_DRAW_RED.PackedValue
-                )
-            );
+                    _hpLineRed = new LineCHB
+                    (
+                        HPB_BAR_SPACELEFT,
+                        27,
+                        HPB_BAR_WIDTH,
+                        HPB_BAR_HEIGHT,
+                        HPB_COLOR_DRAW_RED.PackedValue
+                    )
+                );
 
-            Add
-            (
-                new LineCHB
+                Add
                 (
-                    HPB_BAR_SPACELEFT,
-                    36,
-                    HPB_BAR_WIDTH,
-                    HPB_BAR_HEIGHT,
-                    HPB_COLOR_DRAW_RED.PackedValue
-                )
-            );
+                    _manaLineRed = new LineCHB
+                    (
+                        HPB_BAR_SPACELEFT,
+                        36,
+                        HPB_BAR_WIDTH,
+                        HPB_BAR_HEIGHT,
+                        HPB_COLOR_DRAW_RED.PackedValue
+                    )
+                );
 
-            Add
-            (
-                new LineCHB
+                Add
                 (
-                    HPB_BAR_SPACELEFT,
-                    45,
-                    HPB_BAR_WIDTH,
-                    HPB_BAR_HEIGHT,
-                    HPB_COLOR_DRAW_RED.PackedValue
-                )
-            );
+                    _stamLineRed = new LineCHB
+                    (
+                        HPB_BAR_SPACELEFT,
+                        45,
+                        HPB_BAR_WIDTH,
+                        HPB_BAR_HEIGHT,
+                        HPB_COLOR_DRAW_RED.PackedValue
+                    )
+                );
 
-            Add
-            (
-                _bars[0] = new LineCHB
+                Add
                 (
-                    HPB_BAR_SPACELEFT,
-                    27,
-                    HPB_BAR_WIDTH,
-                    HPB_BAR_HEIGHT,
-                    HPB_COLOR_DRAW_BLUE.PackedValue
-                ) { LineWidth = 0 }
-            );
+                    _bars[0] = new LineCHB
+                    (
+                        HPB_BAR_SPACELEFT,
+                        27,
+                        HPB_BAR_WIDTH,
+                        HPB_BAR_HEIGHT,
+                        HPB_COLOR_DRAW_BLUE.PackedValue
+                    )
+                    { LineWidth = 0 }
+                );
 
-            Add
-            (
-                _bars[1] = new LineCHB
+                Add
                 (
-                    HPB_BAR_SPACELEFT,
-                    36,
-                    HPB_BAR_WIDTH,
-                    HPB_BAR_HEIGHT,
-                    HPB_COLOR_DRAW_BLUE.PackedValue
-                ) { LineWidth = 0 }
-            );
+                    _bars[1] = new LineCHB
+                    (
+                        HPB_BAR_SPACELEFT,
+                        36,
+                        HPB_BAR_WIDTH,
+                        HPB_BAR_HEIGHT,
+                        HPB_COLOR_DRAW_BLUE.PackedValue
+                    )
+                    { LineWidth = 0 }
+                );
 
-            Add
-            (
-                _bars[2] = new LineCHB
+                Add
                 (
-                    HPB_BAR_SPACELEFT,
-                    45,
-                    HPB_BAR_WIDTH,
-                    HPB_BAR_HEIGHT,
-                    HPB_COLOR_DRAW_BLUE.PackedValue
-                ) { LineWidth = 0 }
-            );
+                    _bars[2] = new LineCHB
+                    (
+                        HPB_BAR_SPACELEFT,
+                        45,
+                        HPB_BAR_WIDTH,
+                        HPB_BAR_HEIGHT,
+                        HPB_COLOR_DRAW_BLUE.PackedValue
+                    )
+                    { LineWidth = 0 }
+                );
 
-            Add
-            (
-                _border[0] = new LineCHB
+                Add
                 (
-                    0,
-                    0,
-                    HPB_WIDTH,
-                    HPB_BORDERSIZE,
-                    HPB_COLOR_DRAW_BLACK.PackedValue
-                )
-            );
+                    _border[0] = new LineCHB
+                    (
+                        0,
+                        0,
+                        HPB_WIDTH,
+                        HPB_BORDERSIZE,
+                        HPB_COLOR_DRAW_BLACK.PackedValue
+                    )
+                );
 
-            Add
-            (
-                _border[1] = new LineCHB
+                Add
                 (
-                    0,
-                    HPB_HEIGHT_MULTILINE - HPB_BORDERSIZE,
-                    HPB_WIDTH,
-                    HPB_BORDERSIZE,
-                    HPB_COLOR_DRAW_BLACK.PackedValue
-                )
-            );
+                    _border[1] = new LineCHB
+                    (
+                        0,
+                        HPB_HEIGHT_MULTILINE - HPB_BORDERSIZE,
+                        HPB_WIDTH,
+                        HPB_BORDERSIZE,
+                        HPB_COLOR_DRAW_BLACK.PackedValue
+                    )
+                );
 
-            Add
-            (
-                _border[2] = new LineCHB
+                Add
                 (
-                    0,
-                    0,
-                    HPB_BORDERSIZE,
-                    HPB_HEIGHT_MULTILINE,
-                    HPB_COLOR_DRAW_BLACK.PackedValue
-                )
-            );
+                    _border[2] = new LineCHB
+                    (
+                        0,
+                        0,
+                        HPB_BORDERSIZE,
+                        HPB_HEIGHT_MULTILINE,
+                        HPB_COLOR_DRAW_BLACK.PackedValue
+                    )
+                );
 
-            Add
-            (
-                _border[3] = new LineCHB
+                Add
                 (
-                    HPB_WIDTH - HPB_BORDERSIZE,
-                    0,
-                    HPB_BORDERSIZE,
-                    HPB_HEIGHT_MULTILINE,
-                    HPB_COLOR_DRAW_BLACK.PackedValue
-                )
-            );
+                    _border[3] = new LineCHB
+                    (
+                        HPB_WIDTH - HPB_BORDERSIZE,
+                        0,
+                        HPB_BORDERSIZE,
+                        HPB_HEIGHT_MULTILINE,
+                        HPB_COLOR_DRAW_BLACK.PackedValue
+                    )
+                );
+            }
+            else
+            {
+                if (LocalSerial == World.Player)
+                {
+                    _oldWarMode = World.Player.InWarMode;
+                    Height = HPB_HEIGHT_MULTILINE;
+                    Width = HPB_WIDTH;
 
-            _border[0].LineColor = _border[1].LineColor = _border[2].LineColor = _border[3].LineColor = _oldWarMode ? HPB_COLOR_RED : HPB_COLOR_BLACK;
-            
+                    Add(_background = new AlphaBlendControl(0.7f) { Width = Width, Height = Height, AcceptMouseInput = true, CanMove = true });
+
+                    Add
+                    (
+                        _textBox = new StbTextBox
+                        (
+                            1,
+                            32,
+                            isunicode: true,
+                            style: FontStyle.Cropped | FontStyle.BlackBorder,
+                            hue: Notoriety.GetHue((entity as Mobile)?.NotorietyFlag ?? NotorietyFlag.Gray),
+                            maxWidth: Width,
+                            align: TEXT_ALIGN_TYPE.TS_CENTER
+                        )
+                        {
+                            X = 0,
+                            Y = 3,
+                            Width = HPB_BAR_WIDTH,
+                            IsEditable = false,
+                            CanMove = true
+                        }
+                    );
+
+                    Add
+                    (
+                        _outline = new LineCHB
+                        (
+                            HPB_BAR_SPACELEFT - HPB_OUTLINESIZE,
+                            27 - HPB_OUTLINESIZE,
+                            HPB_BAR_WIDTH + HPB_OUTLINESIZE * 2,
+                            HPB_BAR_HEIGHT * 3 + 2 + HPB_OUTLINESIZE * 2,
+                            HPB_COLOR_DRAW_BLACK.PackedValue
+                        )
+                    );
+
+                    Add
+                    (
+                        _hpLineRed = new LineCHB
+                        (
+                            HPB_BAR_SPACELEFT,
+                            27,
+                            HPB_BAR_WIDTH,
+                            HPB_BAR_HEIGHT,
+                            HPB_COLOR_DRAW_RED.PackedValue
+                        )
+                    );
+
+                    Add
+                    (
+                        new LineCHB
+                        (
+                            HPB_BAR_SPACELEFT,
+                            36,
+                            HPB_BAR_WIDTH,
+                            HPB_BAR_HEIGHT,
+                            HPB_COLOR_DRAW_RED.PackedValue
+                        )
+                    );
+
+                    Add
+                    (
+                        new LineCHB
+                        (
+                            HPB_BAR_SPACELEFT,
+                            45,
+                            HPB_BAR_WIDTH,
+                            HPB_BAR_HEIGHT,
+                            HPB_COLOR_DRAW_RED.PackedValue
+                        )
+                    );
+
+                    Add
+                    (
+                        _bars[0] = new LineCHB
+                        (
+                            HPB_BAR_SPACELEFT,
+                            27,
+                            HPB_BAR_WIDTH,
+                            HPB_BAR_HEIGHT,
+                            HPB_COLOR_DRAW_BLUE.PackedValue
+                        )
+                        { LineWidth = 0 }
+                    );
+
+                    Add
+                    (
+                        _bars[1] = new LineCHB
+                        (
+                            HPB_BAR_SPACELEFT,
+                            36,
+                            HPB_BAR_WIDTH,
+                            HPB_BAR_HEIGHT,
+                            HPB_COLOR_DRAW_BLUE.PackedValue
+                        )
+                        { LineWidth = 0 }
+                    );
+
+                    Add
+                    (
+                        _bars[2] = new LineCHB
+                        (
+                            HPB_BAR_SPACELEFT,
+                            45,
+                            HPB_BAR_WIDTH,
+                            HPB_BAR_HEIGHT,
+                            HPB_COLOR_DRAW_BLUE.PackedValue
+                        )
+                        { LineWidth = 0 }
+                    );
+
+                    Add
+                    (
+                        _border[0] = new LineCHB
+                        (
+                            0,
+                            0,
+                            HPB_WIDTH,
+                            HPB_BORDERSIZE,
+                            HPB_COLOR_DRAW_BLACK.PackedValue
+                        )
+                    );
+
+                    Add
+                    (
+                        _border[1] = new LineCHB
+                        (
+                            0,
+                            HPB_HEIGHT_MULTILINE - HPB_BORDERSIZE,
+                            HPB_WIDTH,
+                            HPB_BORDERSIZE,
+                            HPB_COLOR_DRAW_BLACK.PackedValue
+                        )
+                    );
+
+                    Add
+                    (
+                        _border[2] = new LineCHB
+                        (
+                            0,
+                            0,
+                            HPB_BORDERSIZE,
+                            HPB_HEIGHT_MULTILINE,
+                            HPB_COLOR_DRAW_BLACK.PackedValue
+                        )
+                    );
+
+                    Add
+                    (
+                        _border[3] = new LineCHB
+                        (
+                            HPB_WIDTH - HPB_BORDERSIZE,
+                            0,
+                            HPB_BORDERSIZE,
+                            HPB_HEIGHT_MULTILINE,
+                            HPB_COLOR_DRAW_BLACK.PackedValue
+                        )
+                    );
+
+                    _border[0].LineColor = _border[1].LineColor = _border[2].LineColor = _border[3].LineColor = _oldWarMode ? HPB_COLOR_RED : HPB_COLOR_BLACK;
+                }
+                else
+                {
+                    Mobile mobile = entity as Mobile;
+
+                    if (entity != null)
+                    {
+                        _canChangeName = mobile != null && mobile.IsRenamable;
+                    }
+
+                    Height = HPB_HEIGHT_SINGLELINE;
+                    Width = HPB_WIDTH;
+
+                    Add(_background = new AlphaBlendControl(0.7f) { Width = Width, Height = Height, AcceptMouseInput = true, CanMove = true });
+
+                    Add
+                    (
+                        _outline = new LineCHB
+                        (
+                            HPB_BAR_SPACELEFT - HPB_OUTLINESIZE,
+                            21 - HPB_OUTLINESIZE,
+                            HPB_BAR_WIDTH + HPB_OUTLINESIZE * 2,
+                            HPB_BAR_HEIGHT + HPB_OUTLINESIZE * 2,
+                            HPB_COLOR_DRAW_BLACK.PackedValue
+                        )
+                    );
+
+                    Add
+                    (
+                        _hpLineRed = new LineCHB
+                        (
+                            HPB_BAR_SPACELEFT,
+                            21,
+                            HPB_BAR_WIDTH,
+                            HPB_BAR_HEIGHT,
+                            HPB_COLOR_DRAW_RED.PackedValue
+                        )
+                    );
+
+                    Add
+                    (
+                        _bars[0] = new LineCHB
+                        (
+                            HPB_BAR_SPACELEFT,
+                            21,
+                            HPB_BAR_WIDTH,
+                            HPB_BAR_HEIGHT,
+                            HPB_COLOR_DRAW_BLUE.PackedValue
+                        )
+                        { LineWidth = 0 }
+                    );
+
+                    Add
+                    (
+                        _border[0] = new LineCHB
+                        (
+                            0,
+                            0,
+                            HPB_WIDTH,
+                            HPB_BORDERSIZE,
+                            HPB_COLOR_DRAW_BLACK.PackedValue
+                        )
+                    );
+
+                    Add
+                    (
+                        _border[1] = new LineCHB
+                        (
+                            0,
+                            HPB_HEIGHT_SINGLELINE - HPB_BORDERSIZE,
+                            HPB_WIDTH,
+                            HPB_BORDERSIZE,
+                            HPB_COLOR_DRAW_BLACK.PackedValue
+                        )
+                    );
+
+                    Add
+                    (
+                        _border[2] = new LineCHB
+                        (
+                            0,
+                            0,
+                            HPB_BORDERSIZE,
+                            HPB_HEIGHT_SINGLELINE,
+                            HPB_COLOR_DRAW_BLACK.PackedValue
+                        )
+                    );
+
+                    Add
+                    (
+                        _border[3] = new LineCHB
+                        (
+                            HPB_WIDTH - HPB_BORDERSIZE,
+                            0,
+                            HPB_BORDERSIZE,
+                            HPB_HEIGHT_SINGLELINE,
+                            HPB_COLOR_DRAW_BLACK.PackedValue
+                        )
+                    );
+
+
+                    Add
+                    (
+                        _textBox = new StbTextBox
+                        (
+                            1,
+                            32,
+                            HPB_WIDTH,
+                            true,
+                            hue: Notoriety.GetHue((entity as Mobile)?.NotorietyFlag ?? NotorietyFlag.Gray),
+                            style: FontStyle.Cropped | FontStyle.BlackBorder,
+                            align: TEXT_ALIGN_TYPE.TS_CENTER
+                        )
+                        {
+                            X = 0,
+                            Y = 0,
+                            Width = HPB_WIDTH,
+                            Height = 15,
+                            IsEditable = false,
+                            AcceptMouseInput = _canChangeName,
+                            AcceptKeyboardInput = _canChangeName,
+                            WantUpdateSize = false,
+                            CanMove = true
+                        }
+                    );
+                }
+            }
 
             _textBox.MouseUp += TextBoxOnMouseUp;
             _textBox.SetText(_name);
+
+            if (entity == null)
+            {
+                _textBox.Hue = _background.Hue = 912;
+
+                if (_hpLineRed.LineColor != HPB_COLOR_GRAY)
+                {
+                    _hpLineRed.LineColor = HPB_COLOR_GRAY;
+
+                    _border[0].LineColor = _border[1].LineColor = _border[2].LineColor = _border[3].LineColor = HPB_COLOR_BLACK;
+
+                    if (_manaLineRed != null && _stamLineRed != null)
+                    {
+                        _manaLineRed.LineColor = _stamLineRed.LineColor = HPB_COLOR_GRAY;
+                    }
+                }
+            }
         }
 
         public override bool Contains(int x, int y)
@@ -731,54 +1364,231 @@ namespace ClassicUO.Game.UI.Gumps
         {
             WantUpdateSize = false;
 
-            _oldWarMode = false;
+            Entity entity = World.Get(LocalSerial);
 
-            Add(_background = new GumpPic(0, 0, _oldWarMode ? BACKGROUND_WAR : BACKGROUND_NORMAL, 0) { ContainsByBounds = true });
-
-            Width = _background.Width;
-            Height = _background.Height;
-
-            // add backgrounds
-            Add(_hpLineRed = new GumpPic(34, 12, LINE_RED, 0));
-            Add(new GumpPic(34, 25, LINE_RED, 0));
-            Add(new GumpPic(34, 38, LINE_RED, 0));
-
-            // add over
-            Add
-            (
-                _bars[0] = new GumpPicWithWidth
+            if (World.Party.Contains(LocalSerial))
+            {
+                Add
                 (
-                    34,
-                    12,
-                    LINE_BLUE,
-                    0,
-                    0
-                )
-            );
+                    _background = new GumpPic(0, 0, BACKGROUND_NORMAL, 0)
+                    {
+                        ContainsByBounds = true,
+                        Alpha = 0
+                    }
+                );
 
-            Add
-            (
-                _bars[1] = new GumpPicWithWidth
-                (
-                    34,
-                    25,
-                    LINE_BLUE,
-                    0,
-                    0
-                )
-            );
+                Width = 115;
+                Height = 55;
 
-            Add
-            (
-                _bars[2] = new GumpPicWithWidth
+                if (LocalSerial == World.Player)
+                {
+                    Add
+                    (
+                        _textBox = new StbTextBox
+                        (
+                            3,
+                            32,
+                            120,
+                            false,
+                            FontStyle.Fixed,
+                            Notoriety.GetHue(World.Player.NotorietyFlag)
+                        )
+                        {
+                            X = 0,
+                            Y = -2,
+                            Width = 120,
+                            Height = 50,
+                            IsEditable = false,
+                            CanMove = true
+                        }
+                    );
+
+                    _name = ResGumps.Self;
+                }
+                else
+                {
+                    Add
+                    (
+                        _textBox = new StbTextBox
+                        (
+                            3,
+                            32,
+                            109,
+                            false,
+                            FontStyle.Fixed | FontStyle.BlackBorder,
+                            Notoriety.GetHue((entity as Mobile)?.NotorietyFlag ?? NotorietyFlag.Gray)
+                        )
+                        {
+                            X = 0,
+                            Y = -2,
+                            Width = 109,
+                            Height = 50,
+                            IsEditable = false,
+                            CanMove = true
+                        }
+                    );
+                }
+
+                Add(_buttonHeal1 = new Button((int)ButtonParty.Heal1, 0x0938, 0x093A, 0x0938) { ButtonAction = ButtonAction.Activate, X = 0, Y = 20 });
+
+                Add(_buttonHeal2 = new Button((int)ButtonParty.Heal2, 0x0939, 0x093A, 0x0939) { ButtonAction = ButtonAction.Activate, X = 0, Y = 33 });
+
+                Add(_hpLineRed = new GumpPic(18, 20, LINE_RED_PARTY, 0));
+                Add(_manaLineRed = new GumpPic(18, 33, LINE_RED_PARTY, 0));
+                Add(_stamLineRed = new GumpPic(18, 45, LINE_RED_PARTY, 0));
+
+                Add
                 (
-                    34,
-                    38,
-                    LINE_BLUE,
-                    0,
-                    0
-                )
-            );
+                    _bars[0] = new GumpPicWithWidth
+                    (
+                        18,
+                        20,
+                        LINE_BLUE_PARTY,
+                        0,
+                        96
+                    )
+                );
+
+                Add
+                (
+                    _bars[1] = new GumpPicWithWidth
+                    (
+                        18,
+                        33,
+                        LINE_BLUE_PARTY,
+                        0,
+                        96
+                    )
+                );
+
+                Add
+                (
+                    _bars[2] = new GumpPicWithWidth
+                    (
+                        18,
+                        45,
+                        LINE_BLUE_PARTY,
+                        0,
+                        96
+                    )
+                );
+            }
+            else
+            {
+                if (LocalSerial == World.Player)
+                {
+                    _oldWarMode = World.Player.InWarMode;
+
+                    Add(_background = new GumpPic(0, 0, _oldWarMode ? BACKGROUND_WAR : BACKGROUND_NORMAL, 0) { ContainsByBounds = true });
+
+                    Width = _background.Width;
+                    Height = _background.Height;
+
+                    // add backgrounds
+                    Add(_hpLineRed = new GumpPic(34, 12, LINE_RED, 0));
+                    Add(new GumpPic(34, 25, LINE_RED, 0));
+                    Add(new GumpPic(34, 38, LINE_RED, 0));
+
+                    // add over
+                    Add
+                    (
+                        _bars[0] = new GumpPicWithWidth
+                        (
+                            34,
+                            12,
+                            LINE_BLUE,
+                            0,
+                            0
+                        )
+                    );
+
+                    Add
+                    (
+                        _bars[1] = new GumpPicWithWidth
+                        (
+                            34,
+                            25,
+                            LINE_BLUE,
+                            0,
+                            0
+                        )
+                    );
+
+                    Add
+                    (
+                        _bars[2] = new GumpPicWithWidth
+                        (
+                            34,
+                            38,
+                            LINE_BLUE,
+                            0,
+                            0
+                        )
+                    );
+                }
+                else
+                {
+                    ushort textColor = 0x0386;
+                    ushort hitsColor = 0x0386;
+
+                    Mobile mobile = entity as Mobile;
+
+                    if (entity != null)
+                    {
+                        hitsColor = 0;
+                        _canChangeName = mobile != null && mobile.IsRenamable;
+
+                        if (_canChangeName)
+                        {
+                            textColor = 0x000E;
+                        }
+                    }
+
+                    ushort barColor = entity == null || entity == World.Player || mobile == null || mobile.NotorietyFlag == NotorietyFlag.Criminal || mobile.NotorietyFlag == NotorietyFlag.Gray ? (ushort)0 : Notoriety.GetHue(mobile.NotorietyFlag);
+
+                    Add(_background = new GumpPic(0, 0, 0x0804, barColor) { ContainsByBounds = true });
+                    Add(_hpLineRed = new GumpPic(34, 38, LINE_RED, hitsColor));
+
+                    Add
+                    (
+                        _bars[0] = new GumpPicWithWidth
+                        (
+                            34,
+                            38,
+                            LINE_BLUE,
+                            0,
+                            0
+                        )
+                    );
+
+                    Width = _background.Width;
+                    Height = _background.Height;
+
+                    Add
+                    (
+                        _textBox = new StbTextBox
+                        (
+                            1,
+                            32,
+                            120,
+                            false,
+                            hue: textColor,
+                            style: FontStyle.Fixed
+                        )
+                        {
+                            X = 16,
+                            Y = 14,
+                            Width = 120,
+                            Height = 15,
+                            IsEditable = false,
+                            AcceptMouseInput = _canChangeName,
+                            AcceptKeyboardInput = _canChangeName,
+                            WantUpdateSize = false,
+                            CanMove = true
+                        }
+                    );
+                }
+            }
 
 
             if (_textBox != null)
@@ -792,12 +1602,303 @@ namespace ClassicUO.Game.UI.Gumps
         public override void Update()
         {
             base.Update();
-
             if (IsDisposed /* || (_textBox != null && _textBox.IsDisposed)*/)
             {
                 return;
             }
 
+            bool inparty = World.Party.Contains(LocalSerial);
+
+
+            ushort textColor = 0x0386;
+            ushort hitsColor = 0x0386;
+
+            Entity entity = World.Get(LocalSerial);
+
+            if (entity is Item it && it.Layer == 0 && it.Container == World.Player)
+            {
+                entity = null;
+            }
+
+            if (entity == null || entity.IsDestroyed)
+            {
+                if (LocalSerial != World.Player && !inparty && (ProfileManager.CurrentProfile.CloseHealthBarType == 1 || ProfileManager.CurrentProfile.CloseHealthBarType == 2 && World.CorpseManager.Exists(0, LocalSerial | 0x8000_0000)))
+                {
+                    if (CheckIfAnchoredElseDispose())
+                    {
+                        return;
+                    }
+                }
+
+                if (_isDead)
+                {
+                    _isDead = false;
+                }
+
+                if (!_outOfRange)
+                {
+                    //_poisoned = false;
+                    //_yellowHits = false;
+                    //_normalHits = true;
+
+                    _outOfRange = true;
+
+                    if (World.TargetManager.LastAttack != LocalSerial)
+                    {
+                        GameActions.SendCloseStatus(World, LocalSerial);
+                    }
+
+                    if (inparty)
+                    {
+                        hitsColor = textColor = 912;
+
+                        if (_textBox != null && _textBox.Hue != textColor)
+                        {
+                            _textBox.Hue = textColor;
+                        }
+
+                        _buttonHeal1.IsVisible = _buttonHeal2.IsVisible = false;
+
+                        if (_bars.Length >= 2 && _bars[1] != null)
+                        {
+                            _bars[1].IsVisible = false;
+
+                            _bars[2].IsVisible = false;
+                        }
+                    }
+                    else
+                    {
+                        if (_textBox != null)
+                        {
+                            if (_textBox.Hue != textColor)
+                            {
+                                _textBox.Hue = textColor;
+                            }
+
+                            _textBox.IsEditable = false;
+                        }
+                    }
+
+                    if (_background.Hue != 0)
+                    {
+                        _background.Hue = 0;
+                    }
+
+                    if (_hpLineRed.Hue != hitsColor)
+                    {
+                        _hpLineRed.Hue = hitsColor;
+
+                        if (_manaLineRed != null && _stamLineRed != null)
+                        {
+                            _manaLineRed.Hue = _stamLineRed.Hue = hitsColor;
+                        }
+                    }
+
+                    _bars[0].IsVisible = false;
+                }
+            }
+
+            if (entity != null && !entity.IsDestroyed)
+            {
+                _hpLineRed.IsVisible = entity.HitsMax > 0;
+
+                Mobile mobile = entity as Mobile;
+
+                if (!_isDead && entity != World.Player && mobile != null && mobile.IsDead && !inparty && ProfileManager.CurrentProfile.CloseHealthBarType == 2) // is dead
+                {
+                    if (CheckIfAnchoredElseDispose())
+                    {
+                        return;
+                    }
+                }
+
+                if (entity is Mobile mm && _canChangeName != mm.IsRenamable)
+                {
+                    _canChangeName = mm.IsRenamable;
+
+                    if (_textBox != null)
+                    {
+                        _textBox.AcceptMouseInput = _canChangeName;
+                        _textBox.AcceptKeyboardInput = _canChangeName;
+
+                        if (!_canChangeName)
+                        {
+                            _textBox.IsEditable = false;
+                        }
+                    }
+                }
+
+                if (!(mobile != null && mobile.IsDead) && _isDead)
+                {
+                    _isDead = false;
+                }
+
+                if (!string.IsNullOrEmpty(entity.Name) && !(inparty && LocalSerial == World.Player.Serial) && _name != entity.Name)
+                {
+                    _name = entity.Name;
+
+                    if (_textBox != null)
+                    {
+                        _textBox.SetText(_name);
+                    }
+                }
+
+                if (_outOfRange)
+                {
+                    if (entity.HitsMax == 0)
+                    {
+                        GameActions.RequestMobileStatus(World, entity);
+                    }
+
+                    _outOfRange = false;
+
+                    _canChangeName = !inparty && mobile != null && mobile.IsRenamable;
+
+                    hitsColor = 0;
+
+                    if (inparty)
+                    {
+                        _buttonHeal1.IsVisible = _buttonHeal2.IsVisible = true;
+
+                        if (_bars.Length >= 2 && _bars[1] != null)
+                        {
+                            _bars[1].IsVisible = true;
+
+                            _bars[2].IsVisible = true;
+                        }
+                    }
+
+                    if (_hpLineRed.Hue != hitsColor)
+                    {
+                        _hpLineRed.Hue = hitsColor;
+
+                        if (_manaLineRed != null && _stamLineRed != null)
+                        {
+                            _manaLineRed.Hue = _stamLineRed.Hue = hitsColor;
+                        }
+                    }
+
+                    _bars[0].IsVisible = true;
+                }
+
+                if (inparty && mobile != null)
+                {
+                    textColor = Notoriety.GetHue(mobile.NotorietyFlag);
+                }
+                else
+                {
+                    if (_canChangeName)
+                    {
+                        textColor = 0x000E;
+                    }
+                }
+
+
+                if (_textBox != null && _textBox.Hue != textColor)
+                {
+                    _textBox.Hue = textColor;
+                }
+
+                ushort barColor = entity == World.Player || mobile == null || mobile.NotorietyFlag == NotorietyFlag.Criminal || mobile.NotorietyFlag == NotorietyFlag.Gray ? (ushort)0 : Notoriety.GetHue(mobile.NotorietyFlag);
+
+                if (_background.Hue != barColor)
+                {
+                    _background.Hue = barColor;
+                }
+
+                if (mobile != null && mobile.IsPoisoned && !_poisoned)
+                {
+                    if (inparty)
+                    {
+                        _bars[0].Hue = 63;
+                    }
+                    else
+                    {
+                        _bars[0].Graphic = LINE_POISONED;
+                    }
+
+                    _poisoned = true;
+                    _normalHits = false;
+                }
+                else if (mobile != null && mobile.IsYellowHits && !_yellowHits)
+                {
+                    if (inparty)
+                    {
+                        _bars[0].Hue = 353;
+                    }
+                    else
+                    {
+                        _bars[0].Graphic = LINE_YELLOWHITS;
+                    }
+
+                    _yellowHits = true;
+                    _normalHits = false;
+                }
+                else if (!_normalHits && mobile != null && !mobile.IsPoisoned && !mobile.IsYellowHits && (_poisoned || _yellowHits))
+                {
+                    if (inparty)
+                    {
+                        _bars[0].Hue = 0;
+                    }
+                    else
+                    {
+                        _bars[0].Graphic = LINE_BLUE;
+                    }
+
+                    _poisoned = false;
+                    _yellowHits = false;
+                    _normalHits = true;
+                }
+
+                int barW = inparty ? 96 : 109;
+
+                int hits = CalculatePercents(entity.HitsMax, entity.Hits, barW);
+
+
+                if (hits != _oldHits)
+                {
+                    _bars[0].Percent = hits;
+
+                    _oldHits = hits;
+                }
+
+
+                if ((inparty || LocalSerial == World.Player) && mobile != null)
+                {
+                    int mana = CalculatePercents(mobile.ManaMax, mobile.Mana, barW);
+                    int stam = CalculatePercents(mobile.StaminaMax, mobile.Stamina, barW);
+
+                    if (mana != _oldMana && _bars.Length >= 2 && _bars[1] != null)
+                    {
+                        _bars[1].Percent = mana;
+
+                        _oldMana = mana;
+                    }
+
+                    if (stam != _oldStam && _bars.Length >= 2 && _bars[2] != null)
+                    {
+                        _bars[2].Percent = stam;
+
+                        _oldStam = stam;
+                    }
+                }
+
+                if (UIManager.MouseOverControl != null && UIManager.MouseOverControl.RootParent == this)
+                {
+                    SelectedObject.HealthbarObject = entity;
+                    SelectedObject.Object = entity;
+                }
+            }
+
+            if (LocalSerial == World.Player)
+            {
+                if (World.Player.InWarMode != _oldWarMode)
+                {
+                    _oldWarMode = !_oldWarMode;
+
+                    _background.Graphic = World.Player.InWarMode ? BACKGROUND_WAR : BACKGROUND_NORMAL;
+                }
+            }
         }
 
         public override void OnButtonClick(int buttonID)

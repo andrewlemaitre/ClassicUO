@@ -32,12 +32,10 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Xml;
 using ClassicUO.Game.UI.Controls;
 using ClassicUO.Game.UI.Gumps;
-using ClassicUO.Utility.Logging;
 using Microsoft.Xna.Framework;
 
 namespace ClassicUO.Game.Managers
@@ -135,7 +133,6 @@ namespace ClassicUO.Game.Managers
                     }
                     else
                     {
-                        Utility.Logging.Log.Trace("Drop direction not empty.");
                         this[host].InsertControlAt(draggedControl, host, relativePosition.Value,dropType);
 
                         this[draggedControl] = this[host];
@@ -154,51 +151,42 @@ namespace ClassicUO.Game.Managers
                 {
                     if (this[host] == null)
                     {
-                        //Log.Trace("Drop candidate location host is null.");//Todo:Remove
                         Point offset = relativePosition.Value * new Point(g.GroupMatrixWidth, g.GroupMatrixHeight);
 
                         return (new Point(host.X + offset.X, host.Y + offset.Y), DropType.ATTACH);
                     }
                     else if (this[host].IsEmptyDirection(draggedControl, host, relativePosition.Value))
                     {
-                        //Log.Trace("Drop candidate location is empty.");//Todo:Remove
                         Point offset = relativePosition.Value * new Point(g.GroupMatrixWidth, g.GroupMatrixHeight);
 
                         return (new Point(host.X + offset.X, host.Y + offset.Y), DropType.ATTACH);
                     }
                     else if (!this[host].IsEmptyDirection(draggedControl, host, relativePosition.Value))
                     {
-                        //Point offset = new Point(0, 0);
                         DropType dropType = DropType.NONE;
 
                         if (relativePosition.Value.Y == -1)
                         {
-                            //offset = new Point(0, 0);
                             dropType = DropType.INSERT_UP;
                         }
                         else if (relativePosition.Value.Y == 1)
                         {
-                            //offset = new Point(0, g.GroupMatrixHeight);
                             dropType = DropType.INSERT_DOWN;
                         }
                         else if(relativePosition.Value.X == -1)
                         {
-                            //offset = new Point(0, 0);
                             dropType = DropType.INSERT_LEFT;
                         }
                         else if (relativePosition.Value.X == 1)
                         {
-                            //offset = new Point(g.GroupMatrixWidth, 0);
                             dropType = DropType.INSERT_RIGHT;
                         }
                         Point offset = relativePosition.Value * new Point(g.GroupMatrixWidth, g.GroupMatrixHeight);
-                        //Log.Trace(string.Format("DCL is not empty. Relative Position={0}. Offset={1}. Host={2},{3}", relativePosition, offset, host.X, host.Y));//Todo:Remove
                         return (new Point(host.X + offset.X, host.Y + offset.Y), dropType);
                     }
                 }
             }
 
-            //Log.Trace("Returning dragged location.");//Todo:Remove
             return (draggedControl.Location,DropType.NONE);
         }
 
@@ -460,7 +448,6 @@ namespace ClassicUO.Game.Managers
                 }
 
                 Point? hostPosition = GetControlCoordinates(host);
-                Log.Trace("Host coords" + hostPosition.ToString());
 
                 if (hostPosition.HasValue)
                 {
@@ -530,14 +517,12 @@ namespace ClassicUO.Game.Managers
                         while (currentX < arrayWidth && controlMatrix[currentX, targetY] != null)
                         {
                             gumpStack.Enqueue(controlMatrix[currentX, targetY]);
-                            Log.Trace("StackSerial:" + gumpStack.Last().LocalSerial.ToString());
                             currentX += 1;
                         }
 
                         //controlMatrix[targetX, targetY] = control;
                         Point currentTarget = new(targetX, targetY);
                         controlMatrix[currentTarget.X, currentTarget.Y] = control;
-                        Log.Trace("Attaching " + control.LocalSerial.ToString() + " to " + host.LocalSerial.ToString());
                         currentTarget.X += 1;
 
                         while (gumpStack.Count > 0)
@@ -586,7 +571,6 @@ namespace ClassicUO.Game.Managers
                         while (currentX >= 0 && controlMatrix[currentX, targetY] != null)
                         {
                             gumpStack.Enqueue(controlMatrix[currentX, targetY]);
-                            Log.Trace("StackSerial:" + gumpStack.Last().LocalSerial.ToString());
                             currentX -= 1;
                         }
 
@@ -597,7 +581,6 @@ namespace ClassicUO.Game.Managers
 
                         while (gumpStack.Count > 0)
                         {
-                            Log.Trace("Left insert gump stack > 0");
                             if (currentTarget.X < 0) // Create new column left
                             {
                                 ResizeMatrix(controlMatrix.GetLength(0) + control.WidthMultiplier, controlMatrix.GetLength(1), control.WidthMultiplier, 0);
@@ -700,11 +683,6 @@ namespace ClassicUO.Game.Managers
                 return controlMatrix[x, y] == null;
             }
 
-            public Point? TempGetControlCoordinates(AnchorableGump control)
-            {
-                return GetControlCoordinates(control);
-            }
-
             private Point? GetControlCoordinates(AnchorableGump control)
             {
                 for (int x = 0; x < controlMatrix.GetLength(0); x++)
@@ -738,9 +716,9 @@ namespace ClassicUO.Game.Managers
 
             private void printMatrix()
             {
-                //Console.WriteLine();
-                //Console.WriteLine();
-                //Console.WriteLine();
+                Console.WriteLine();
+                Console.WriteLine();
+                Console.WriteLine();
 
                 for (int y = 0; y < controlMatrix.GetLength(1); y++)
                 {
@@ -748,7 +726,7 @@ namespace ClassicUO.Game.Managers
                     {
                         if (controlMatrix[x, y] != null)
                         {
-                            Console.Write(" " + string.Format("{0:0000000000}",controlMatrix[x, y].LocalSerial) + " ");
+                            Console.Write(" " + controlMatrix[x, y].LocalSerial + " ");
                         }
                         else
                         {

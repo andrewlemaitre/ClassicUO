@@ -57,7 +57,7 @@ namespace ClassicUO.Game.UI.Gumps
             _prevY;
 
         const ushort LOCK_GRAPHIC = 0x082C;
-        private enum ARROWS { UP_ARROW = 9760, RIGHT_ARROW = 9762, DOWN_ARROW = 9764, LEFT_ARROW = 9766 }
+        private enum ARROW_GRAPHICS { UP_ARROW = 9760, RIGHT_ARROW = 9762, DOWN_ARROW = 9764, LEFT_ARROW = 9766 }
 
         protected AnchorableGump(World world, uint local, uint server) : base(world, local, server) { }
 
@@ -71,7 +71,7 @@ namespace ClassicUO.Game.UI.Gumps
 
         protected override void OnMove(int x, int y)
         {
-            if (Keyboard.Alt)
+            if (Keyboard.Alt && !ProfileManager.CurrentProfile.HoldAltToMoveGumps)
             {
                 UIManager.AnchorManager.DetachControl(this);
             }
@@ -92,8 +92,6 @@ namespace ClassicUO.Game.UI.Gumps
 
             _prevX = X;
             _prevY = Y;
-            Utility.Logging.Log.Trace(string.Format("Gump screen location: {0}, {1}", X, Y)); //Todo:Remove
-            Utility.Logging.Log.Trace(string.Format("Gump anchor group position: {0}", UIManager.AnchorManager[this]?.TempGetControlCoordinates(this)));
 
             base.OnMouseDown(x, y, button);
         }
@@ -199,8 +197,7 @@ namespace ClassicUO.Game.UI.Gumps
 
                 if (drawLoc!= Location && !(_dropType == AnchorManager.DropType.ATTACH || _dropType == AnchorManager.DropType.NONE ))
                 {
-                    Texture2D previewColor = SolidColorTextureCache.GetTexture(Color.Pink);
-                    //Utility.Logging.Log.Trace("DropType = Insert");//Todo:Remove
+                    Texture2D previewColor = SolidColorTextureCache.GetTexture(Color.Silver);
                     Vector2 start = new(drawLoc.X, drawLoc.Y);
                     Vector2 end = new(drawLoc.X, drawLoc.Y);
                     SpriteInfo gumpInfo;
@@ -211,28 +208,28 @@ namespace ClassicUO.Game.UI.Gumps
                             start.Y += Height - 1;
                             end.X += Width;
                             end.Y += Height - 1;
-                            gumpInfo = Client.Game.UO.Gumps.GetGump((uint)ARROWS.UP_ARROW);
+                            gumpInfo = Client.Game.UO.Gumps.GetGump((uint)ARROW_GRAPHICS.UP_ARROW);
                             batcher.Draw(gumpInfo.Texture, new Vector2((start.X+end.X)/2-gumpInfo.UV.Width/2, start.Y-gumpInfo.UV.Height), gumpInfo.UV, hueVector);
                             break;
                         case AnchorManager.DropType.INSERT_RIGHT:
                             start.X += 1;
                             end.X += 1;
                             end.Y += Height;
-                            gumpInfo = Client.Game.UO.Gumps.GetGump((uint)ARROWS.RIGHT_ARROW);
+                            gumpInfo = Client.Game.UO.Gumps.GetGump((uint)ARROW_GRAPHICS.RIGHT_ARROW);
                             batcher.Draw(gumpInfo.Texture, new Vector2(start.X, (start.Y + end.Y) / 2 - gumpInfo.UV.Height / 2), gumpInfo.UV, hueVector);
                             break;
                         case AnchorManager.DropType.INSERT_DOWN:
                             start.Y -= 1;
                             end.X += Width;
                             end.Y -= 1;
-                            gumpInfo = Client.Game.UO.Gumps.GetGump((uint)ARROWS.DOWN_ARROW);
+                            gumpInfo = Client.Game.UO.Gumps.GetGump((uint)ARROW_GRAPHICS.DOWN_ARROW);
                             batcher.Draw(gumpInfo.Texture, new Vector2((start.X + end.X) / 2 - gumpInfo.UV.Width / 2, start.Y+4), gumpInfo.UV, hueVector);
                             break;
                         case AnchorManager.DropType.INSERT_LEFT:
                             start.X += Width + 1;
                             end.X += Width + 1;
                             end.Y += Height;
-                            gumpInfo = Client.Game.UO.Gumps.GetGump((uint)ARROWS.LEFT_ARROW);
+                            gumpInfo = Client.Game.UO.Gumps.GetGump((uint)ARROW_GRAPHICS.LEFT_ARROW);
                             batcher.Draw(gumpInfo.Texture, new Vector2(start.X - gumpInfo.UV.Width-4, (start.Y + end.Y) / 2 - gumpInfo.UV.Height / 2), gumpInfo.UV, hueVector);
                             break;
                         default:
